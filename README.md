@@ -1,164 +1,114 @@
-# Stock Analysis Project 📈
+# 股票分析项目 📈
 
-股票分析项目 - 基于A股市场数据的技术分析系统
-
-## 项目简介
-
-本项目用于自动分析A股股票的技术指标，生成分析报告，并支持选股策略。
+基于A股市场数据的自动化分析系统
 
 ## 目录结构
 
 ```
 stock/
-├── step1_get_stock_list.py    # 获取股票列表
-├── step2_analyze.py           # 股票分析主脚本
-├── step2_analyze_latest.py    # 最新版分析脚本备份
-├── step2_analyze.py.bak       # 旧版备份
-├── analyze_sh.py              # 上海股票分析脚本
-├── find_doji.py               # 寻找十字星
-├── find_doji_v2.py            # 十字星v2版本
-├── find_doji_all.py           # 全量十字星查找
-├── stock_apis.py              # 股票API封装
-├── stock_demo.py              # 示例代码
-├── stock_test_all.py          # 全量测试
-├── daemon.py                  # 守护进程
-├── tmp/                       # 临时文件目录
-│   ├── stock_info.csv         # 股票列表数据
-│   └── *.md                   # 各股票分析报告
-└── README.md                  # 本文件
-```
-
-## 环境依赖
-
-```bash
-pip install akshare pandas
+├── .env                 # 数据库配置 (敏感信息，不提交git)
+├── .gitignore          # git忽略配置
+├── load_env.py         # 加载配置脚本
+├── init_db.py          # 数据库初始化
+├── daily_update.py     # 每日数据更新 (19:30)
+├── analyze_to_db.py   # 技术分析 (23:00)
+├── select_stocks.py    # 选股推荐 (08:45)
+├── schema.sql          # 建表语句
+├── README.md           # 说明文档
+└── tmp/               # 临时文件 (不提交git)
+    └── recommendation.md
 ```
 
 ## 快速开始
 
-### 1. 获取股票列表
+### 1. 配置环境
 
 ```bash
-python step1_get_stock_list.py
+cd /home/seekey/dev/workspace/openclaw/stock
+
+# 创建 .env 文件
+cat > .env << 'EOF'
+DB_HOST=数据库地址
+DB_PORT=端口
+DB_USER=用户名
+DB_PASSWORD=密码
+DB_NAME=数据库名
+EOF
 ```
 
-### 2. 分析单只股票
+### 2. 初始化数据库
 
 ```bash
-python -c "
-import step2_analyze as sa
-sa.analyze_one_stock('000001', '平安银行', 'SZ')
-"
+python init_db.py
 ```
 
-### 3. 批量分析
+### 3. 运行定时任务
+
+数据会自动通过 cron 定时任务执行：
+- 08:45 - 选股推荐
+- 19:30 - 数据更新
+- 23:00 - 技术分析
+
+## 数据表
+
+| 表名 | 说明 |
+|------|------|
+| stock_list | 股票列表 (~4600只) |
+| stock_history | 历史K线数据 |
+| stock_news | 股票新闻 |
+| stock_market | 大盘指数 (上证/深证) |
+| stock_daily | 技术分析结果 |
+
+## 脚本说明
+
+### init_db.py
+数据库初始化脚本，创建所有表。
 
 ```bash
-# 并行分析上海+深圳
-python analyze_sh.py
+python init_db.py [数据库名]  # 默认 stock
 ```
 
-## 功能特性
+### daily_update.py (19:30)
+1. 更新股票列表 (stock_list) - 全量
+2. 更新30天历史数据 (stock_history) - 全量
+3. 更新股票新闻 (stock_news) - 全量
+4. 更新大盘信息 (stock_market) - 上证/深证
 
-### 技术指标
+### analyze_to_db.py (23:00)
+从 stock_history 读取数据，计算技术指标：
+- Z-Score (10/30/60日)
+- MACD (DIF/DEA/信号)
+- RSI (14日)
+- 均线信号 (多头/空头/震荡)
 
-- **MACD**: 多头/空头判断，金叉/死叉信号
-- **均线系统**: 多头排列，金叉/死叉
-- **RSI**: 相对强弱指标
-- **Z-Score**: 估值分析（60日/30日/10日）
-- **K线形态**: 十字星、锤子线、流星线
-- **成交量分析**: 放量交易日识别
+写入 stock_daily 表。
 
-### 数据来源
+### select_stocks.py (08:45)
+从 stock_daily 筛选优质股票，生成推荐报告。
 
-- 数据源: AkShare (东方财富)
-- 市场: 上海(SH)、深圳(SZ)、北京(BJ)
-- 数据范围: 约4600只股票
+## 技术指标
 
-## 分析报告示例
+| 指标 | 说明 | 选股标准 |
+|------|------|---------|
+| Z-Score | 估值偏离度 | ≤ -0.5 (低估) |
+| MACD | 趋势判断 | 多头/金叉 |
+| RSI | 强弱指标 | 30-70 (健康) |
+| 均线 | 趋势判断 | 多头排列 |
 
-每个股票生成一个Markdown报告，包含：
-
-```markdown
-# 平安银行 (000001) 分析报告
-
-## 分时段分析
-| 指标 | 2年内 | 1年以内 | 本周 |
-|------|--------|---------|------|
-| 涨跌幅 | -77.67% | -7.68% | 1.20% |
-
-## 估值指标
-- MACD: 多头 (DIF:-0.07 DEA:-0.09)
-- RSI(14): 58.8 (正常)
-- 均线系统: 缠绕
-
-## 资金流向
-- 最新价: 10.94
-- 净额: 1.17亿
-```
-
-## 定时任务
-
-通过OpenClaw设置每日自动分析：
+## 依赖
 
 ```bash
-# 每日19:00运行
-openclaw cron create --name "每日股票分析" \
-  --schedule "0 19 * * *" \
-  --message "请运行 stock 项目的股票分析脚本"
+pip install akshare pandas pymysql
 ```
 
-## 选股策略
+## 注意事项
 
-### 技术选股标准
-
-| 指标 | 分数 | 说明 |
-|------|------|------|
-| MACD多头 | +5 | DIF>DEA |
-| MACD金叉 | +3 | DIF上穿DEA |
-| 均线多头排列 | +5 | 5日>10日>20日 |
-| 均线金叉 | +3 | 短均线向上突破长均线 |
-| Z-Score低估 | +3 | Z-Score < -1 |
-| 资金净流入 | +3 | 主力资金净流入 |
-| RSI正常 | +2 | 30-70区间 |
-| 放量 | +2 | 成交量放大 |
-
-### TOP 20 筛选结果
-
-根据技术分析筛选的最优20只股票：
-- 100% MACD多头+金叉
-- 100% 均线多头排列+金叉
-- 100% 资金净流入
-
-## 性能
-
-- 单只股票分析: ~19秒
-- 全量4587只: ~10小时（双进程）
-- 优化方向: 并行处理、缓存优化
-
-## 常见问题
-
-### Q: 分析失败怎么办？
-A: 某些股票数据接口不稳定会自动跳过，不影响其他股票
-
-### Q: 如何查看分析进度？
-A: 查看日志或 `ls tmp/*.md | wc -l`
-
-### Q: 数据在哪？
-A: `/home/seekey/dev/workspace/openclaw/stock/tmp/`
-
-## 更新日志
-
-### 2026-03-12
-- 新增MACD、RSI、均线系统分析
-- 优化数据获取速度
-- 添加Z-Score估值分析
-- 实现技术指标选股功能
-
-## 作者
-
-小龙虾 🦞
+- `.env` 和 `tmp/` 不会提交到 git
+- 首次使用需运行 `init_db.py` 初始化数据库
+- 使用 `INSERT IGNORE` 避免重复插入数据
 
 ---
+
+**作者**: 小龙虾 🦞
 
 *本分析仅供参考，不构成投资建议*
